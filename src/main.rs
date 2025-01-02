@@ -11,6 +11,7 @@ use colored::*;
 struct PingResult {
     ip: Ipv4Addr,
     reachable: bool,
+    hostname: Option<String>,
 }
 
 #[tokio::main]
@@ -126,7 +127,12 @@ async fn main() {
             let _permit = sem_clone.acquire().await;
             match ping(ip).await {
                 Ok((ip, reachable)) => {
-                    tx_clone.send(PingResult { ip, reachable }).unwrap();
+                    let hostname = if reachable {
+                        dns_lookup(ip).await.ok()
+                    } else {
+                        None
+                    };
+                    tx_clone.send(PingResult { ip, reachable, hostname }).unwrap();
                 }
                 Err(e) => {
                     eprintln!("Error pinging {}: {}", ip, e);
@@ -162,6 +168,9 @@ async fn main() {
     println!("\nReachable IPs:");
     for result in results {
         println!("{} {}", result.ip.to_string(), "UP".green().bold());
+        if let Some(hostname) = result.hostname {
+            println!("    {}", hostname);
+        }
     }
 
     // Print summary
@@ -193,4 +202,30 @@ async fn ping(ip: Ipv4Addr) -> Result<(Ipv4Addr, bool), std::io::Error> {
     let status = cmd.status().await?;
 
     Ok((ip, status.success()))
+}
+
+async fn dns_lookup(ip: Ipv4Addr) -> Result<String, std::io::Error> {
+    let mut cmd = Command::new("nslookup");
+    cmd.arg(ip.to_string());
+    
+    cmd.stdin(Stdio::null());
+    
+    let output = cmd.output().await?;
+    
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    
+    // Parse the nslookup output to extract hostname
+    for line in output_str.lines() {
+        if line.contains("name = ") {
+            if let Some(hostname) = line.split("name = ").nth(1) {
+                // Remove trailing dot if present
+                return Ok(hostname.trim_end_matches('.').to_string());
+            }
+        }
+    }
+    
+    Err(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        "No hostname found"
+    ))
 }
