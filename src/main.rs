@@ -5,10 +5,9 @@ use tokio::process::Command;
 use futures::stream::{FuturesUnordered, StreamExt};
 use tokio::sync::Semaphore;
 use std::sync::Arc;
-use serde::{Serialize, Deserialize};
 use std::process::Stdio;
+use colored::*;
 
-#[derive(Serialize, Deserialize)]
 struct PingResult {
     ip: Ipv4Addr,
     reachable: bool,
@@ -142,8 +141,15 @@ async fn main() {
 
     // Collect results
     let mut results = Vec::new();
+    let mut total_ips = 0;
+    let mut reachable_ips = 0;
+    
     while let Some(ping_result) = rx.recv().await {
-        results.push(ping_result);
+        total_ips += 1;
+        if ping_result.reachable {
+            reachable_ips += 1;
+            results.push(ping_result);
+        }
     }
 
     // Wait for all tasks to complete
@@ -152,8 +158,16 @@ async fn main() {
     // Sort the results by IP address
     results.sort_by_key(|r| r.ip);
 
-    // Output the results in JSON format
-    println!("{}", serde_json::to_string_pretty(&results).unwrap());
+    // Output the results
+    println!("\nReachable IPs:");
+    for result in results {
+        println!("{} {}", result.ip.to_string(), "UP".green().bold());
+    }
+
+    // Print summary
+    println!("\nSummary:");
+    println!("Total IPs scanned: {}", total_ips);
+    println!("Total reachable: {}", reachable_ips);
 }
 
 async fn ping(ip: Ipv4Addr) -> Result<(Ipv4Addr, bool), std::io::Error> {
