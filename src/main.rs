@@ -7,6 +7,7 @@ use tokio::sync::Semaphore;
 use std::sync::Arc;
 use std::process::Stdio;
 use colored::*;
+use spinners::{Spinner, Spinners};
 
 struct PingResult {
     ip: Ipv4Addr,
@@ -116,6 +117,9 @@ async fn main() {
     // Ping the IP addresses concurrently with a limit
     let mut futures = FuturesUnordered::new();
 
+    // Create a spinner to show progress
+    let mut sp = Spinner::new(Spinners::Dots, "Scanning network...".into());
+
     // Create a channel to collect results
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
@@ -160,6 +164,9 @@ async fn main() {
 
     // Wait for all tasks to complete
     while let Some(_) = futures.next().await {}
+
+    // Stop the spinner with success message
+    sp.stop_with_message(format!("Scan complete! Found {} reachable hosts", reachable_ips));
 
     // Sort the results by IP address
     results.sort_by_key(|r| r.ip);
